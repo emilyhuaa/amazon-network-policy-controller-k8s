@@ -116,6 +116,12 @@ func (r *defaultEndpointsResolver) computePodSelectorEndpoints(ctx context.Conte
 		return nil, err
 	}
 	for _, pod := range podList.Items {
+		if pod.Spec.HostNetwork {
+			r.logger.V(1).Info("Skipping hostNetwork pod",
+				"pod", k8s.NamespacedName(&pod),
+				"policy", k8s.NamespacedName(policy))
+			continue
+		}
 		if k8s.IsPodNetworkReady(&pod) {
 			podIP := k8s.GetPodIP(&pod)
 			podEndpoints = append(podEndpoints, policyinfo.PodEndpoint{
@@ -233,7 +239,7 @@ func (r *defaultEndpointsResolver) getIngressRulesPorts(ctx context.Context, pol
 
 	// since we pull ports from dst pods, we should deduplicate them
 	dedupedPorts := dedupPorts(portList)
-	r.logger.Info("Got ingress ports from dst pods", "port", dedupedPorts)
+	r.logger.V(1).Info("Got ingress ports from dst pods", "port", dedupedPorts)
 
 	return dedupedPorts
 }
