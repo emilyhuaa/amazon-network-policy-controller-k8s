@@ -12,8 +12,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networking "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	policyinfo "github.com/aws/amazon-network-policy-controller-k8s/api/v1alpha1"
@@ -1175,4 +1177,120 @@ func TestEndpointsResolver_ExcludesTerminalPods(t *testing.T) {
 	assert.Len(t, podEndpoints, 1, "Should only include running pod in PolicyEndpoints")
 	assert.Equal(t, "10.0.0.1", string(podEndpoints[0].PodIP))
 	assert.Equal(t, "running-pod", podEndpoints[0].Name)
+}
+
+func TestEndpointsResolver_ExcludesHostNetworkPods_Integration(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = networking.AddToScheme(scheme)
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-ns",
+		},
+	}
+
+	// Create a regular pod (should be included)
+	regularPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "regular-pod",
+			Namespace: "test-ns",
+			Labels:    map[string]string{"app": "test"},
+		},
+		Spec: corev1.PodSpec{
+			HostNetwork: false,
+		},
+		Status: corev1.PodStatus{
+			PodIP:  "10.0.0.1",
+			HostIP: "192.168.1.1",
+			Phase:  corev1.PodRunning,
+		},
+	}
+
+	// Create a hostNetwork pod (should be excluded)
+	hostNetworkPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hostnetwork-pod",
+			Namespace: "test-ns",
+			Labels:    map[string]string{"app": "test"},
+		},
+		Spec: corev1.PodSpec{
+			HostNetwork: true,
+		},
+		Status: corev1.PodStatus{
+			PodIP:  "192.168.1.1",
+			HostIP: "192.168.1.1",
+			Phase:  corev1.PodRunning,
+		},
+	}
+
+	// Create another regular pod (should be included)
+	regularPod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "regular-pod-2",
+			Namespace: "test-ns",
+			Labels:    map[string]string{"app": "test"},
+		},
+		Spec: corev1.PodSpec{
+			HostNetwork: false,
+		},
+		Status: corev1.PodStatus{
+			PodIP:  "10.0.0.2",
+			HostIP: "192.168.1.2",
+			Phase:  corev1.PodRunning,
+		},
+	}
+
+	// Create fake client with test objects
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(ns, regularPod, hostNetworkPod, regularPod2).
+		Build()
+
+	// Create resolver
+	resolver := NewEndpointsResolver(fakeClient, logr.Discard())
+
+	// Create NetworkPolicy with empty podSelector (matches all pods in namespace)
+	policy := &networking.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-policy",
+			Namespace: "test-ns",
+		},
+		Spec: networking.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "test"},
+			},
+			PolicyTypes: []networking.PolicyType{
+				networking.PolicyTypeIngress,
+				networking.PolicyTypeEgress,
+			},
+		},
+	}
+
+	// Resolve endpoints
+	_, _, podEndpoints, err := resolver.Resolve(context.Background(), policy)
+
+	// Verify results
+	require.NoError(t, err)
+	assert.Len(t, podEndpoints, 2, "Should only include non-hostNetwork pods")
+
+	// Verify that only regular pods are included
+	podNames := make(map[string]bool)
+	for _, pe := range podEndpoints {
+		podNames[pe.Name] = true
+	}
+
+	assert.True(t, podNames["regular-pod"], "regular-pod should be included")
+	assert.True(t, podNames["regular-pod-2"], "regular-pod-2 should be included")
+	assert.False(t, podNames["hostnetwork-pod"], "hostnetwork-pod should be excluded")
+
+	// Verify pod IPs
+	podIPs := make(map[string]bool)
+	for _, pe := range podEndpoints {
+		podIPs[string(pe.PodIP)] = true
+	}
+
+	assert.True(t, podIPs["10.0.0.1"], "regular-pod IP should be included")
+	assert.True(t, podIPs["10.0.0.2"], "regular-pod-2 IP should be included")
+	assert.False(t, podIPs["192.168.1.1"], "hostNetwork pod IP should not be included")
 }

@@ -27,6 +27,11 @@ func IsPodNetworkReady(pod *corev1.Pod) bool {
 		pod.Status.Phase != corev1.PodFailed
 }
 
+// IsHostNetworkPod returns true if the pod uses the host network namespace
+func IsHostNetworkPod(pod *corev1.Pod) bool {
+	return pod.Spec.HostNetwork
+}
+
 // LookupContainerPortAndName returns numerical containerPort and portName for specific port and protocol
 func LookupContainerPortAndName(pod *corev1.Pod, port intstr.IntOrString, protocol corev1.Protocol) (int32, string, error) {
 	for _, podContainer := range pod.Spec.Containers {
@@ -83,7 +88,8 @@ func stripDownPodObject(pod *corev1.Pod) *corev1.Pod {
 		})
 	}
 	pod.Spec = corev1.PodSpec{
-		Containers: strippedContainers,
+		Containers:  strippedContainers,
+		HostNetwork: pod.Spec.HostNetwork,
 	}
 	pod.Status = corev1.PodStatus{
 		HostIP:  pod.Status.HostIP,
