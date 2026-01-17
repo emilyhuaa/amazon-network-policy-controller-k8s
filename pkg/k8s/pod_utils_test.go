@@ -240,47 +240,6 @@ func TestIsPodNetworkReady(t *testing.T) {
 	}
 }
 
-func TestIsHostNetworkPod(t *testing.T) {
-	tests := []struct {
-		name     string
-		pod      *corev1.Pod
-		expected bool
-	}{
-		{
-			name: "pod with hostNetwork=true returns true",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{
-					HostNetwork: true,
-				},
-			},
-			expected: true,
-		},
-		{
-			name: "pod with hostNetwork=false returns false",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{
-					HostNetwork: false,
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "pod with hostNetwork unset returns false",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{},
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := IsHostNetworkPod(tt.pod)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestStripDownPodObject(t *testing.T) {
 	succeededPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -356,5 +315,4 @@ func TestStripDownPodObject(t *testing.T) {
 	// Test hostNetwork pod
 	strippedHostNetwork := stripDownPodObject(hostNetworkPod)
 	assert.True(t, strippedHostNetwork.Spec.HostNetwork, "HostNetwork field must be preserved")
-	assert.True(t, IsHostNetworkPod(strippedHostNetwork), "IsHostNetworkPod should return true for hostNetwork pod")
 }

@@ -116,8 +116,7 @@ func (r *defaultEndpointsResolver) computePodSelectorEndpoints(ctx context.Conte
 		return nil, err
 	}
 	for _, pod := range podList.Items {
-		// Skip hostNetwork pods
-		if k8s.IsHostNetworkPod(&pod) {
+		if pod.Spec.HostNetwork {
 			r.logger.V(1).Info("Skipping hostNetwork pod",
 				"pod", k8s.NamespacedName(&pod),
 				"policy", k8s.NamespacedName(policy))
@@ -359,13 +358,6 @@ func (r *defaultEndpointsResolver) getMatchingPodAddresses(ctx context.Context, 
 	r.logger.V(1).Info("Got pods for label selector", "count", len(podList.Items), "selector", ls.String())
 
 	for _, pod := range podList.Items {
-		// Skip hostNetwork pods
-		if k8s.IsHostNetworkPod(&pod) {
-			r.logger.V(1).Info("Skipping hostNetwork pod",
-				"pod", k8s.NamespacedName(&pod),
-				"policy", k8s.NamespacedName(policy))
-			continue
-		}
 		if !k8s.IsPodNetworkReady(&pod) {
 			continue
 		}
